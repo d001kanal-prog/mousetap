@@ -10,6 +10,7 @@ const canvas = { width: 0, height: 0, style: {}, getContext: () => ctx2d, getBou
 
 // ---- поддельный WebAudio: считает узлы, проверяет вызовы ----
 const audioStats = { osc: 0, noise: 0, nodes: 0, badParam: 0 };
+const tintStats = { composite: [], fills: 0, draws: 0 };
 let audioNow = 0;
 const param = () => { const p = { value: 0 }; for (const m of ['setValueAtTime', 'linearRampToValueAtTime', 'exponentialRampToValueAtTime', 'setTargetAtTime']) p[m] = (v, tt) => { if (!isFinite(v) || !isFinite(tt === undefined ? 0 : tt) || v === 0 && m === 'exponentialRampToValueAtTime') audioStats.badParam++; return p; }; return p; };
 const node = (extra = {}) => { audioStats.nodes++; return Object.assign({ connect: noop, start: noop, stop: noop, disconnect: noop }, extra); };
@@ -27,14 +28,18 @@ class FakeAudioContext {
 const store = {};
 const win = { innerWidth: 390, innerHeight: 800, devicePixelRatio: 2, addEventListener: noop, PointerEvent: function() {}, Telegram: null };
 let rafCb = null;
-const sandbox = { window: win, document: { readyState: 'complete', getElementById: () => canvas, addEventListener: noop, hidden: false },
+const sandbox = { window: win, document: { readyState: 'complete', getElementById: () => canvas, addEventListener: noop, hidden: false,
+    createElement: tag => ({ tagName: tag, width: 0, height: 0, getContext: () => new Proxy({}, {
+      get: (t, k) => k in t ? t[k] : k === 'drawImage' ? (() => { tintStats.draws++; }) : k === 'fillRect' ? (() => { tintStats.fills++; }) : noop,
+      set: (t, k, v) => { if (k === 'globalCompositeOperation') tintStats.composite.push(v); t[k] = v; return true; }
+    }) }) },
   navigator: { language: 'ru' }, localStorage: { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = v; } },
-  Image: function() { setTimeout(() => this.onload && this.onload(), 0); }, setTimeout, clearTimeout, console, Math, JSON, Object, Promise,
+  Image: function() { this.complete = true; this.naturalWidth = 600; this.naturalHeight = 100; setTimeout(() => this.onload && this.onload(), 0); }, setTimeout, clearTimeout, console, Math, JSON, Object, Promise,
   requestAnimationFrame: f => { rafCb = f; }, AudioContext: FakeAudioContext, setInterval, clearInterval };
 Object.assign(sandbox, win); sandbox.window = sandbox;
 vm.createContext(sandbox);
 for (const f of ['sim.js', 'levels.js', 'ads.js', 'audio.js', 'game.js']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f), 'utf8'), sandbox, { filename: f });
-vm.runInContext('this.__G=G;this.__api={startLevel,openMap,Save,setScreen,zoomAt,gameTap,boardGeometry,fail,win,openShop,buyOrEquipSkin,SKINS};', sandbox);
+vm.runInContext('this.__G=G;this.__api={startLevel,openMap,Save,setScreen,zoomAt,gameTap,boardGeometry,fail,win,openShop,buyOrEquipSkin,SKINS,getTintedSprite};', sandbox);
 const G = sandbox.__G, api = sandbox.__api;
 let ts = 0;
 function frames(n, dt = 16) { for (let i = 0; i < n; i++) { ts += dt; audioNow = ts / 1000; rafCb(ts); } }
@@ -70,6 +75,9 @@ setTimeout(() => {
   assert(G.screen === 'shop', 'магазин мышей открывается и отрисовывается');
   api.buyOrEquipSkin('mouse', api.SKINS.mouse[1]);
   assert(api.Save.data.mouseSkin === 'gold' && api.Save.data.coins === 75, 'покупка скина мыши списывает монеты и экипирует его');
+  const tintedMouse = api.getTintedSprite('mouse_run_sheet', api.SKINS.mouse[1].hue);
+  assert(!!tintedMouse && tintedMouse.width === 600 && tintStats.composite.includes('color') && tintStats.fills > 0, 'серый спрайт мыши реально перекрашивается через canvas color blend');
+  assert(api.getTintedSprite('mouse_run_sheet', api.SKINS.mouse[1].hue) === tintedMouse, 'перекрашенный спрайт кешируется и не создаётся заново каждый кадр');
   api.openShop('cat'); frames(4);
   assert(G.screen === 'shop' && G.shopTab === 'cat', 'переключение на магазин котов работает');
   assert(api.Save.encode().v === 3, 'новый формат сохранения V3 активен');

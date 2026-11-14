@@ -132,7 +132,34 @@ var ASSET_FILES = {
   star: 'img/star.png'
 };
 var IMG = {};
+var TINTED_IMG = Object.create(null);
 var assetsReady = false;
+
+/* Перекрашивает спрайт по оттенку, сохраняя светотень и прозрачность.
+   hue-rotate сам по себе не меняет серые пиксели — поэтому раньше скины
+   мышей покупались, но визуально оставались серыми. */
+function getTintedSprite(name, hue) {
+  var source = IMG[name];
+  if (!hue || !source || !source.complete || !source.naturalWidth) return source;
+  var key = name + ':' + hue;
+  if (TINTED_IMG[key]) return TINTED_IMG[key];
+  try {
+    var tinted = document.createElement('canvas');
+    tinted.width = source.naturalWidth;
+    tinted.height = source.naturalHeight;
+    var tintCtx = tinted.getContext('2d');
+    tintCtx.drawImage(source, 0, 0);
+    tintCtx.globalCompositeOperation = 'color';
+    tintCtx.fillStyle = 'hsl(' + hue + ', 78%, 50%)';
+    tintCtx.fillRect(0, 0, tinted.width, tinted.height);
+    tintCtx.globalCompositeOperation = 'source-over';
+    TINTED_IMG[key] = tinted;
+    return tinted;
+  } catch (err) {
+    /* Если браузер запрещает offscreen canvas, ниже останется CSS-фильтр. */
+    return source;
+  }
+}
 
 function loadAssets(done) {
   var names = Object.keys(ASSET_FILES);
@@ -153,11 +180,13 @@ function loadAssets(done) {
 
 /* Рисует кадр из спрайт-листа или программный фолбэк */
 function drawSprite(name, frame, count, x, y, w, h, flip, hue) {
-  var im = IMG[name];
-  if (im && im.complete && im.naturalWidth) {
-    var fw = im.naturalWidth / count;
+  var original = IMG[name];
+  var im = hue ? getTintedSprite(name, hue) : original;
+  if (im && ((im.complete && im.naturalWidth) || (im.width && im.height && im.getContext))) {
+    var fw = im.naturalWidth ? im.naturalWidth / count : im.width / count;
     ctx.save();
-    if (hue) ctx.filter = 'hue-rotate(' + hue + 'deg) saturate(1.35)';
+    /* Резервный фильтр применяется только если перекрашенный canvas создать нельзя. */
+    if (hue && im === original) ctx.filter = 'sepia(1) saturate(3) hue-rotate(' + hue + 'deg)';
     if (flip) {
       ctx.translate(x + w, y);
       ctx.scale(-1, 1);
@@ -173,11 +202,11 @@ function drawSprite(name, frame, count, x, y, w, h, flip, hue) {
   if (hue) ctx.filter = 'hue-rotate(' + hue + 'deg) saturate(1.35)';
   if (flip) { ctx.translate(x + w / 2, 0); ctx.scale(-1, 1); ctx.translate(-(x + w / 2), 0); }
   if (name === 'mouse_run_sheet') {
-    ctx.fillStyle = '#9ea3ac'; ctx.strokeStyle = '#4b3621'; ctx.lineWidth = 4;
+    ctx.fillStyle = hue ? 'hsl(' + hue + ', 78%, 58%)' : '#9ea3ac'; ctx.strokeStyle = '#4b3621'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + h * 0.62, w * 0.3, h * 0.2, 0, 0, 7); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(x + w * 0.72, y + h * 0.42, w * 0.16, 0, 7); ctx.fill(); ctx.stroke();
   } else if (name === 'cat_sleep_sheet' || name === 'cat_awake') {
-    ctx.fillStyle = '#f09636'; ctx.strokeStyle = '#5e3416'; ctx.lineWidth = 5;
+    ctx.fillStyle = hue ? 'hsl(' + hue + ', 78%, 55%)' : '#f09636'; ctx.strokeStyle = '#5e3416'; ctx.lineWidth = 5;
     ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + h * 0.6, w * 0.38, h * 0.28, 0, 0, 7); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(x + w * 0.34, y + h * 0.36, w * 0.18, 0, 7); ctx.fill(); ctx.stroke();
   } else if (name === 'hole_closed' || name === 'hole_open') {
