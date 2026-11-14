@@ -34,7 +34,7 @@ const sandbox = { window: win, document: { readyState: 'complete', getElementByI
 Object.assign(sandbox, win); sandbox.window = sandbox;
 vm.createContext(sandbox);
 for (const f of ['sim.js', 'levels.js', 'ads.js', 'audio.js', 'game.js']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f), 'utf8'), sandbox, { filename: f });
-vm.runInContext('this.__G=G;this.__api={startLevel,openMap,Save,setScreen,zoomAt,gameTap,boardGeometry,fail,win};', sandbox);
+vm.runInContext('this.__G=G;this.__api={startLevel,openMap,Save,setScreen,zoomAt,gameTap,boardGeometry,fail,win,openShop,buyOrEquipSkin,SKINS};', sandbox);
 const G = sandbox.__G, api = sandbox.__api;
 let ts = 0;
 function frames(n, dt = 16) { for (let i = 0; i < n; i++) { ts += dt; audioNow = ts / 1000; rafCb(ts); } }
@@ -64,6 +64,16 @@ setTimeout(() => {
   // ---------- ОБУЧЕНИЕ ----------
   const assert = (c, m) => { if (!c) { console.log('FAIL:', m); process.exit(1); } console.log('ok  :', m); };
   const blocking = () => vm.runInContext('tutBlocking()', sandbox);
+  // ---------- МАГАЗИН И СКИНЫ ----------
+  api.Save.data.coins = 100;
+  api.openShop('mouse'); frames(4);
+  assert(G.screen === 'shop', 'магазин мышей открывается и отрисовывается');
+  api.buyOrEquipSkin('mouse', api.SKINS.mouse[1]);
+  assert(api.Save.data.mouseSkin === 'gold' && api.Save.data.coins === 75, 'покупка скина мыши списывает монеты и экипирует его');
+  api.openShop('cat'); frames(4);
+  assert(G.screen === 'shop' && G.shopTab === 'cat', 'переключение на магазин котов работает');
+  assert(api.Save.encode().v === 3, 'новый формат сохранения V3 активен');
+  api.setScreen('menu'); frames(2);
   const cellXY = (x, y) => { const g = api.boardGeometry(); return [g.bx + (x + .5) * g.cs, g.by + (y + .5) * g.cs]; };
   const tapCell = (x, y) => { const [px, py] = cellXY(x, y); ev('pointerdown', px, py, 9); ev('pointerup', px, py, 9); };
   api.Save.data.tut = {};

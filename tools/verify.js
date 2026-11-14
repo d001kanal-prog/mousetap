@@ -64,11 +64,32 @@ function trial(cats0, hole, speed, d, catIdx) {
   return null;
 }
 
+
+function normalizeLevelForBot(L) {
+  const holes = L.holes.map(h => {
+    let path = h.path.map(c => c.slice());
+    for (const tp of (L.teleports || [])) {
+      const a = path.findIndex(c => c[0] === tp.a.x && c[1] === tp.a.y);
+      const b = path.findIndex(c => c[0] === tp.b.x && c[1] === tp.b.y);
+      if (a >= 0 && b > a) { path = path.slice(0, a + 1).concat(path.slice(b)); break; }
+    }
+    return { x: h.x, y: h.y, path };
+  });
+  const cells = new Set();
+  holes.forEach(h => h.path.forEach(c => cells.add(c[0] + ',' + c[1])));
+  const on = a => (a || []).filter(o => cells.has(o.x + ',' + o.y));
+  return { ...L, holes, cats: on(L.cats), traps: on(L.traps), dogs: on(L.dogs), doors: on(L.doors), teleports: [] };
+}
+
 function solveLevel(L) {
+  L = normalizeLevelForBot(L);
   const speed = L.speed || 2.2;
   let cats = L.cats.map(c => ({ x: c.x, y: c.y, state: 'awake', timer: c.wake, wake: c.wake, sleep: c.sleep, age: 0 }));
   const catIdx = {}; cats.forEach((c, i) => catIdx[c.x + ',' + c.y] = i);
   const trapCells = {}; L.traps.forEach(tr => trapCells[tr.x + ',' + tr.y] = 1);
+  const extraCells = {};
+  (L.dogs || []).forEach(o => extraCells[o.x + ',' + o.y] = 1);
+  (L.doors || []).forEach(o => extraCells[o.x + ',' + o.y] = 1);
   let total = 0, taps = 0;
   const done = new Set();
   const order = L.holes.map((_, i) => i);
@@ -77,9 +98,9 @@ function solveLevel(L) {
     for (const hi of order) {
       if (done.has(hi)) continue;
       const hole = L.holes[hi];
-      // снять ловушки на маршруте (+1 с на навигацию)
+      // снять ловушки, открыть двери и успокоить собак на маршруте (+ время на каждый тап)
       let nt = 0;
-      hole.path.forEach(c => { const k = c[0] + ',' + c[1]; if (trapCells[k]) { delete trapCells[k]; nt++; } });
+      hole.path.forEach(c => { const k = c[0] + ',' + c[1]; if (trapCells[k]) { delete trapCells[k]; nt++; } if (extraCells[k]) { delete extraCells[k]; nt++; } });
       const pre = 1 + 0.5 * nt; taps += nt;
       cats.forEach(c => advanceCat(c, pre)); total += pre;
       let res = null, d = 0;

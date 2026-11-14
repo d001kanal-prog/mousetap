@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
-   МЫШКИН ПОБЕГ — головоломка для Яндекс Игр
+   МЫШКИН ПОБЕГ — Telegram Mini App
    Чистый JS, Canvas 2D. Экраны: загрузка → меню → карта → игра.
    ============================================================ */
 
@@ -32,7 +32,12 @@ var STR = {
     tut_cheese: 'Сыр! Мышь, пробежавшая по нему, принесёт третью звезду. Звёзды: 1 — пройти уровень, 2 — без проигрышей, 3 — собрать сыр.',
     tut_camera_1: 'Поле большое. Двигай его пальцем, сведи пальцы — зум. Кнопки справа: + и −, а нижняя вписывает всё поле на экран.',
     tut_camera_2: 'Кнопка «Подсказка» покажет следующий шаг и сама наведёт на него камеру.',
-    tut_bends_1: 'Пути бывают извилистыми. Цвет пунктира совпадает с цветом норы и коврика выхода. Пути могут пересекаться — кот на перекрёстке мешает обеим мышам.'
+        tut_bends_1: 'Пути бывают извилистыми. Цвет пунктира совпадает с цветом норы и коврика выхода. Пути могут пересекаться — кот на перекрёстке мешает обеим мышам.',
+    failDog: 'Собака напугала мышку!', failDoor: 'Дверь ещё закрыта!',
+    shop: 'Магазин', coins: 'Монеты', mouseSkins: 'Образы мышей', catSkins: 'Образы котов',
+    buy: 'Купить', equip: 'Выбрать', equipped: 'Выбрано', owned: 'Открыто',
+    chapterApartment: 'Квартира', chapterBasement: 'Подвал', chapterWarehouse: 'Склад',
+    dogHelp: 'Собака: нажми на неё, чтобы успокоить.', doorHelp: 'Дверь: нажми, чтобы открыть.'
   },
   en: {
     title: 'Mouse Escape',
@@ -60,7 +65,12 @@ var STR = {
     tut_cheese: 'Cheese! A mouse running over it earns the third star. Stars: 1 — finish, 2 — no fails, 3 — get the cheese.',
     tut_camera_1: 'The board is big. Drag to move it, pinch to zoom. Buttons on the right: + and −, and the bottom one fits the whole board.',
     tut_camera_2: 'The Hint button shows the next move and moves the camera there for you.',
-    tut_bends_1: 'Paths can wind. The dotted colour matches its hole and exit mat. Paths may cross — a cat on a crossing blocks both mice.'
+        tut_bends_1: 'Paths can wind. The dotted colour matches its hole and exit mat. Paths may cross — a cat on a crossing blocks both mice.',
+    failDog: 'The dog scared the mouse!', failDoor: 'The door is still closed!',
+    shop: 'Shop', coins: 'Coins', mouseSkins: 'Mouse skins', catSkins: 'Cat skins',
+    buy: 'Buy', equip: 'Equip', equipped: 'Equipped', owned: 'Owned',
+    chapterApartment: 'Apartment', chapterBasement: 'Basement', chapterWarehouse: 'Warehouse',
+    dogHelp: 'Dog: tap it to calm it down.', doorHelp: 'Door: tap to open.'
   }
 };
 var LANG = 'ru';
@@ -71,6 +81,27 @@ var NAP_CAP = Sim.NAP_CAP;   // максимум запаса сна кота
 var AREA_TOP = 74, AREA_BOTTOM = 84; // свободная область поля между HUD
 var PATH_COLORS = ['#c0773a','#3f86c0','#7a5ec0','#3f9e6a','#c05a8a','#a8941f','#d0562b','#5a6b78'];
 var HINT_TIME = 3;    // секунд горит подсказка
+var SKINS = {
+  mouse: [
+    { id: 'classic', name: 'Серая', en: 'Grey', price: 0, hue: 0 },
+    { id: 'gold', name: 'Золотая', en: 'Golden', price: 25, hue: 35 },
+    { id: 'ocean', name: 'Морская', en: 'Ocean', price: 40, hue: 185 },
+    { id: 'violet', name: 'Фиалка', en: 'Violet', price: 60, hue: 265 }
+  ],
+  cat: [
+    { id: 'classic', name: 'Рыжий', en: 'Ginger', price: 0, hue: 0 },
+    { id: 'shadow', name: 'Теневой', en: 'Shadow', price: 35, hue: 215 },
+    { id: 'rose', name: 'Розовый', en: 'Rose', price: 50, hue: 325 },
+    { id: 'royal', name: 'Королевский', en: 'Royal', price: 80, hue: 45 }
+  ]
+};
+function skinHue(kind) {
+  var id = kind === 'mouse' ? Save.data.mouseSkin : Save.data.catSkin;
+  var list = SKINS[kind];
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i].hue;
+  return 0;
+}
+function chapterName(idx) { var c = getChapter(idx); return c.id === 'apartment' ? t('chapterApartment') : (c.id === 'basement' ? t('chapterBasement') : t('chapterWarehouse')); }
 
 /* ---------------- Canvas ---------------- */
 var canvas, ctx, W = 0, H = 0, dpr = 1;
@@ -121,11 +152,12 @@ function loadAssets(done) {
 }
 
 /* Рисует кадр из спрайт-листа или программный фолбэк */
-function drawSprite(name, frame, count, x, y, w, h, flip) {
+function drawSprite(name, frame, count, x, y, w, h, flip, hue) {
   var im = IMG[name];
   if (im && im.complete && im.naturalWidth) {
     var fw = im.naturalWidth / count;
     ctx.save();
+    if (hue) ctx.filter = 'hue-rotate(' + hue + 'deg) saturate(1.35)';
     if (flip) {
       ctx.translate(x + w, y);
       ctx.scale(-1, 1);
@@ -138,6 +170,7 @@ function drawSprite(name, frame, count, x, y, w, h, flip) {
   }
   /* --- программный фолбэк --- */
   ctx.save();
+  if (hue) ctx.filter = 'hue-rotate(' + hue + 'deg) saturate(1.35)';
   if (flip) { ctx.translate(x + w / 2, 0); ctx.scale(-1, 1); ctx.translate(-(x + w / 2), 0); }
   if (name === 'mouse_run_sheet') {
     ctx.fillStyle = '#9ea3ac'; ctx.strokeStyle = '#4b3621'; ctx.lineWidth = 4;
@@ -179,38 +212,45 @@ function trackForLevel(idx) { return idx < 200 ? 'easy' : (idx < 600 ? 'mid' : '
 
 /* ---------------- Сохранение ---------------- */
 var Save = {
-  data: { unlocked: 0, stars: {}, sound: true, music: true, tut: {} },
-  /* Компактный формат: звёзды — строка из цифр (1 символ на уровень).
-     У Telegram CloudStorage лимит значения 4096 символов, JSON-объект на 1000 уровней не влез бы. */
+  data: { unlocked: 0, stars: {}, sound: true, music: true, tut: {}, coins: 0,
+    mouseSkin: 'classic', catSkin: 'classic', mouseOwned: { classic: 1 }, catOwned: { classic: 1 },
+    coinLevels: {}, rewardLevels: {} },
   encode: function() {
-    var d = this.data, n = Math.min(LEVEL_COUNT, d.unlocked + 1), str = '';
-    for (var i = 0; i < n; i++) str += (d.stars[i] || 0);
-    return { v: 2, u: d.unlocked, s: str, snd: d.sound ? 1 : 0, m: d.music ? 1 : 0, t: Object.keys(d.tut).join(',') };
+    var d = this.data, n = Math.min(LEVEL_COUNT, d.unlocked + 1), stars = '', coinFlags = '', rewardFlags = '';
+    for (var i = 0; i < n; i++) stars += (d.stars[i] || 0);
+    /* Флаги монет/наград храним для всех уровней: монета может быть сохранена до победы. */
+    for (var j = 0; j < LEVEL_COUNT; j++) { coinFlags += d.coinLevels[j] ? '1' : '0'; rewardFlags += d.rewardLevels[j] ? '1' : '0'; }
+    return { v: 3, u: d.unlocked, s: stars, snd: d.sound ? 1 : 0, m: d.music ? 1 : 0,
+      t: Object.keys(d.tut).join(','), c: d.coins | 0, ms: d.mouseSkin, cs: d.catSkin,
+      mo: Object.keys(d.mouseOwned).join(','), ko: Object.keys(d.catOwned).join(','), cl: coinFlags, rw: rewardFlags };
   },
   load: function() {
     var self = this;
     return Ads.load().then(function(d) {
       if (d) {
-        if (d.v === 2) {
+        if (d.v === 3 || d.v === 2) {
           self.data.unlocked = Math.min(LEVEL_COUNT - 1, d.u | 0);
           self.data.stars = {};
           for (var i = 0; i < (d.s || '').length; i++) { var v = +d.s[i]; if (v > 0) self.data.stars[i] = v; }
-          self.data.sound = !!d.snd;
-          self.data.music = d.m === undefined ? true : !!d.m;
-          self.data.tut = {};
-          (d.t || '').split(',').forEach(function(k) { if (k) self.data.tut[k] = 1; });
-        } else {   // старый формат
+          self.data.sound = !!d.snd; self.data.music = d.m === undefined ? true : !!d.m;
+          self.data.tut = {}; (d.t || '').split(',').forEach(function(k) { if (k) self.data.tut[k] = 1; });
+          if (d.v === 3) {
+            self.data.coins = Math.max(0, d.c | 0); self.data.mouseSkin = d.ms || 'classic'; self.data.catSkin = d.cs || 'classic';
+            self.data.mouseOwned = { classic: 1 }; self.data.catOwned = { classic: 1 };
+            (d.mo || 'classic').split(',').forEach(function(k) { if (k) self.data.mouseOwned[k] = 1; });
+            (d.ko || 'classic').split(',').forEach(function(k) { if (k) self.data.catOwned[k] = 1; });
+            self.data.coinLevels = {}; self.data.rewardLevels = {};
+            for (var j = 0; j < (d.cl || '').length; j++) if (d.cl[j] === '1') self.data.coinLevels[j] = 1;
+            for (var r = 0; r < (d.rw || '').length; r++) if (d.rw[r] === '1') self.data.rewardLevels[r] = 1;
+          }
+        } else {
           if (typeof d.unlocked === 'number') self.data.unlocked = Math.min(LEVEL_COUNT - 1, d.unlocked);
           if (d.stars) self.data.stars = d.stars;
           if (typeof d.sound === 'boolean') self.data.sound = d.sound;
         }
       }
-      /* кто уже играл (старое сохранение без обучения) — базовое обучение не показываем */
-      if ((!d || d.t === undefined) && self.data.unlocked >= 6) {
-        ['basics', 'cats', 'multi', 'traps', 'cheese'].forEach(function(k) { self.data.tut[k] = 1; });
-      }
-      AudioSys.muted = !self.data.sound;
-      AudioSys.setMusic(self.data.music);
+      if ((!d || d.t === undefined) && self.data.unlocked >= 6) ['basics', 'cats', 'multi', 'traps', 'cheese'].forEach(function(k) { self.data.tut[k] = 1; });
+      AudioSys.muted = !self.data.sound; AudioSys.setMusic(self.data.music);
     });
   },
   save: function() { Ads.save(this.encode()); }
@@ -218,7 +258,7 @@ var Save = {
 
 /* ---------------- Глобальное состояние ---------------- */
 var G = {
-  screen: 'loading',   // loading | menu | map | game
+  screen: 'loading',   // loading | menu | map | game | shop
   overlay: null,       // null | win | fail | pause
   paused: false,
   levelIdx: 0,
@@ -232,13 +272,21 @@ var G = {
   levelsCompleted: 0, lastInterstitial: 0,
   fade: 1, errMsg: null,
   cam: { cs: 40, ox: 0, oy: 0 }, speed: 2.2,
-  tut: null, tf: { opened: 0, snoozed: 0, disarmed: 0 }, zoomRect: null, hintRect: null
+  tut: null, tf: { opened: 0, snoozed: 0, disarmed: 0 }, zoomRect: null, hintRect: null, shopTab: 'mouse'
 };
 
 function toggleMusic() { Save.data.music = !Save.data.music; AudioSys.setMusic(Save.data.music); Save.save(); }
 function toggleSfx() { Save.data.sound = !Save.data.sound; AudioSys.muted = !Save.data.sound; Save.save(); }
 function openMap(idx) { G.mapPage = Math.floor(Math.max(0, Math.min(idx, LEVEL_COUNT - 1)) / 20); setScreen('map'); }
 function setScreen(s) { if (window.Ads && Ads.updateBackButton) Ads.updateBackButton(s !== 'menu'); G.screen = s; uiButtons = []; G.fade = 1; AudioSys.setTrack(s === 'game' ? trackForLevel(G.levelIdx) : 'menu'); }
+function openShop(tab) { G.shopTab = tab || 'mouse'; setScreen('shop'); }
+function buyOrEquipSkin(kind, skin) {
+  var owned = kind === 'mouse' ? Save.data.mouseOwned : Save.data.catOwned;
+  var key = kind === 'mouse' ? 'mouseSkin' : 'catSkin';
+  if (owned[skin.id]) { Save.data[key] = skin.id; Save.save(); return; }
+  if (Save.data.coins < skin.price) return;
+  Save.data.coins -= skin.price; owned[skin.id] = 1; Save.data[key] = skin.id; Save.save();
+}
 
 function trapAt(x, y) { return Sim.trapAt(G, x, y); }
 function catAt(x, y) { return Sim.catAt(G, x, y); }
@@ -293,6 +341,7 @@ function startLevel(idx, keepStats) {
   var L = getLevel(idx);
   G.levelIdx = idx;
   Sim.init(G, L);
+  if (Save.data.coinLevels[idx]) G.coins.forEach(function(c) { c.taken = true; });
   G.cheeseAnim = 0;
   G.overlay = null; G.paused = false;
   G.shake = 0; G.hintCell = null; G.hintTimer = 0;
@@ -311,7 +360,7 @@ function catOnScreen(c) {
 
 function fail(reason) {
   G.overlay = 'fail';
-  G.failMsg = t(reason === 'trap' ? 'failTrap' : 'failCat');
+  G.failMsg = t(reason === 'trap' ? 'failTrap' : (reason === 'dog' ? 'failDog' : (reason === 'door' ? 'failDoor' : 'failCat')));
   G.attemptFails++;
   G.failStreak++;
   G.shake = 1;
@@ -327,6 +376,7 @@ function win() {
   var prev = Save.data.stars[G.levelIdx] || 0;
   Save.data.stars[G.levelIdx] = Math.max(prev, stars);
   Save.data.unlocked = Math.min(LEVEL_COUNT - 1, Math.max(Save.data.unlocked, G.levelIdx + 1));
+  if (!Save.data.rewardLevels[G.levelIdx]) { Save.data.coins += 5; Save.data.rewardLevels[G.levelIdx] = 1; }
   G.failStreak = 0;
   if (G.tut) { Save.data.tut[G.tut.id] = 1; G.tut = null; }
   Save.save();
@@ -355,6 +405,7 @@ function update(dt) {
     var x = ev[e];
     if (x.t === 'exit') AudioSys.exitMouse();
     else if (x.t === 'cheese') { G.cheeseAnim = 0.001; AudioSys.crunch(); }
+    else if (x.t === 'coin') { if (!Save.data.coinLevels[G.levelIdx]) { Save.data.coinLevels[G.levelIdx] = 1; Save.data.coins += 1; Save.save(); } AudioSys.crunch(); }
     else if (x.t === 'catwake' || x.t === 'catsleep') {
       /* коты подают голос только на экране и не чаще раза в 0.2 с */
       if (catOnScreen(x.c) && AudioSys.catGate()) {
@@ -377,6 +428,10 @@ function computeHint() {
       cell = hole.path[j];
       var tr = trapAt(cell[0], cell[1]);
       if (tr && tr.armed) return { x: cell[0], y: cell[1] };
+      var dr = Sim.itemAt(G.doors, cell[0], cell[1]);
+      if (dr && !dr.open) return { x: cell[0], y: cell[1] };
+      var dg = Sim.itemAt(G.dogs, cell[0], cell[1]);
+      if (dg && !dg.calm) return { x: cell[0], y: cell[1] };
     }
   }
   for (i = 0; i < G.holes.length; i++) {
@@ -493,6 +548,7 @@ function gameTap(px, py) {
   G.hintCell = null; G.hintTimer = 0;
   var r = Sim.tap(G, cx, cy);
   if (r === 'trap') { AudioSys.trap(); G.tf.disarmed++; }
+  else if (r === 'door' || r === 'dog') { AudioSys.tap(); }
   else if (r === 'snooze') { AudioSys.purr(); G.tf.snoozed++; }
   else if (r === 'open') { AudioSys.open(); G.tf.opened++; }
   else if (r === 'catfail') fail('cat');
@@ -600,20 +656,20 @@ function drawIcon(b) {
 }
 
 /* ---------------- Фон стены (меню) ---------------- */
-function drawWall() {
+function drawWall(theme) {
   var g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#f7e7c8');
-  g.addColorStop(1, '#eed5a8');
+  g.addColorStop(0, theme ? theme.wall : '#f7e7c8');
+  g.addColorStop(1, theme ? theme.floorA : '#eed5a8');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = 'rgba(214,178,120,0.25)';
+  ctx.fillStyle = theme ? theme.accent + '22' : 'rgba(214,178,120,0.25)';
   var step = 46;
   for (var x = ((G.time * 0) + step); x < W; x += step) ctx.fillRect(x, 0, 10, H);
   /* плинтус */
   var bh = Math.max(34, H * 0.07);
-  ctx.fillStyle = '#a8815a';
+  ctx.fillStyle = theme ? theme.accent : '#a8815a';
   ctx.fillRect(0, H - bh, W, bh);
-  ctx.fillStyle = '#8a6342';
+  ctx.fillStyle = theme ? '#51483b' : '#8a6342';
   ctx.fillRect(0, H - bh, W, 6);
 }
 
@@ -639,10 +695,12 @@ function drawMenu() {
   /* заголовок */
   text(t('title'), W / 2, H * 0.14, Math.min(56, W / 11), '#4b3621');
   /* кнопка играть */
-  var bw = Math.min(280, W * 0.6), bh = 74;
-  addButton(W / 2 - bw / 2, H * 0.66, bw, bh, t('play'), function() { openMap(Save.data.unlocked); }, '#7bb661');
+  var bw = Math.min(280, W * 0.6), bh = 66, menuY = H * 0.55;
+  addButton(W / 2 - bw / 2, menuY, bw, bh, t('play'), function() { openMap(Save.data.unlocked); }, '#7bb661');
   drawButtonRect(uiButtons[uiButtons.length - 1]);
-  addButton(W / 2 - bw / 2, H * 0.66 + bh + 14, bw, 54, t('tutorial'), function() {
+  addButton(W / 2 - bw / 2, menuY + bh + 10, bw, 52, t('shop') + ' · ' + t('coins') + ': ' + Save.data.coins, function() { openShop('mouse'); }, '#e8b25a');
+  drawButtonRect(uiButtons[uiButtons.length - 1]);
+  addButton(W / 2 - bw / 2, menuY + bh + 72, bw, 48, t('tutorial'), function() {
     Save.data.tut = {}; Save.save(); startLevel(0, false);
   }, '#e8933c');
   drawButtonRect(uiButtons[uiButtons.length - 1]);
@@ -660,8 +718,9 @@ function drawMenu() {
 }
 
 function drawMap() {
-  drawWall();
-  text(t('map'), W / 2, 44, 36, '#4b3621');
+  var mapTheme = getChapter(Math.min(LEVEL_COUNT - 1, G.mapPage * 20));
+  drawWall(mapTheme);
+  text(t('map') + ' · ' + chapterName(Math.min(LEVEL_COUNT - 1, G.mapPage * 20)), W / 2, 44, Math.min(32, W / 13), '#4b3621');
   var s = 52;
   iconButton(14, 14, s, 'menu_arrow', function() { setScreen('menu'); });
   drawIconMenu(uiButtons[uiButtons.length - 1]);
@@ -736,6 +795,36 @@ function drawMap() {
   if (G.fade > 0) { ctx.fillStyle = 'rgba(0,0,0,' + G.fade + ')'; ctx.fillRect(0, 0, W, H); }
 }
 
+function drawShop() {
+  drawWall();
+  text(t('shop'), W / 2, 42, 34, '#4b3621');
+  text('🪙 ' + Save.data.coins, W / 2, 78, 22, '#a56a16', 'center', true);
+  iconButton(14, 14, 52, 'menu_arrow', function() { setScreen('menu'); });
+  drawIconMenu(uiButtons[uiButtons.length - 1]);
+  var tabY = 108, tabW = Math.min(160, (W - 42) / 2), tabH = 48;
+  addButton(W / 2 - tabW - 4, tabY, tabW, tabH, t('mouseSkins'), function() { G.shopTab = 'mouse'; }, G.shopTab === 'mouse' ? '#7bb661' : '#cbb894');
+  drawButtonRect(uiButtons[uiButtons.length - 1]);
+  addButton(W / 2 + 4, tabY, tabW, tabH, t('catSkins'), function() { G.shopTab = 'cat'; }, G.shopTab === 'cat' ? '#7bb661' : '#cbb894');
+  drawButtonRect(uiButtons[uiButtons.length - 1]);
+  var kind = G.shopTab, list = SKINS[kind], owned = kind === 'mouse' ? Save.data.mouseOwned : Save.data.catOwned;
+  var equipped = kind === 'mouse' ? Save.data.mouseSkin : Save.data.catSkin;
+  var cardW = Math.min(158, (W - 42) / 2), cardH = Math.min(190, (H - 230) / 2);
+  var gap = 12, totalW = cardW * 2 + gap, startX = (W - totalW) / 2, startY = 176;
+  list.forEach(function(skin, i) {
+    var x = startX + (i % 2) * (cardW + gap), y = startY + Math.floor(i / 2) * (cardH + 10);
+    rrPath(x, y, cardW, cardH, 16); ctx.fillStyle = '#f9efdd'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#8a6342'; ctx.stroke();
+    var isOwned = !!owned[skin.id], isEquipped = equipped === skin.id;
+    if (kind === 'mouse') drawSprite('mouse_run_sheet', 2, 6, x + cardW * .24, y + 8, cardW * .52, cardW * .52, false, skin.hue);
+    else drawSprite('cat_sleep_sheet', 1, 4, x + cardW * .24, y + 4, cardW * .52, cardW * .52, false, skin.hue);
+    text(LANG === 'en' ? skin.en : skin.name, x + cardW / 2, y + cardW * .62, 17, '#4b3621', 'center', true);
+    var label = isEquipped ? t('equipped') : (isOwned ? t('equip') : t('buy') + ' · ' + skin.price);
+    addButton(x + 9, y + cardH - 48, cardW - 18, 40, label, function() { buyOrEquipSkin(kind, skin); }, isEquipped ? '#7bb661' : (isOwned || Save.data.coins >= skin.price ? '#e8b25a' : '#cbb894'));
+    drawButtonRect(uiButtons[uiButtons.length - 1]);
+  });
+  text(kind === 'mouse' ? t('mouseSkins') : t('catSkins'), W / 2, H - 28, 13, '#8a6342', 'center', true);
+  if (G.fade > 0) { ctx.fillStyle = 'rgba(0,0,0,' + G.fade + ')'; ctx.fillRect(0, 0, W, H); }
+}
+
 function drawIconMenu(b) {
   var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   ctx.strokeStyle = '#4b3621'; ctx.lineWidth = 4; ctx.lineCap = 'round';
@@ -762,7 +851,7 @@ function drawGame() {
     sy = (Math.random() - 0.5) * 14 * G.shake;
   }
   var cols = G.level.cols, rows = G.level.rows, cs = geo.cs;
-  var ah = areaH();
+  var ah = areaH(), theme = getChapter(G.levelIdx);
 
   ctx.save();
   ctx.translate(sx, sy);
@@ -777,10 +866,30 @@ function drawGame() {
   /* пол */
   for (var yy = y0; yy <= y1; yy++) {
     for (var xx = x0; xx <= x1; xx++) {
-      ctx.fillStyle = (xx + yy) % 2 === 0 ? '#f7ecd7' : '#f0e1c2';
+      ctx.fillStyle = (xx + yy) % 2 === 0 ? theme.floorA : theme.floorB;
       ctx.fillRect(geo.bx + xx * cs, geo.by + yy * cs, cs, cs);
     }
   }
+  /* Ненавязчивые детали окружения для каждой главы. */
+  ctx.save();
+  if (theme.id === 'apartment') {
+    ctx.strokeStyle = 'rgba(151,105,62,0.12)'; ctx.lineWidth = Math.max(1, cs * .018);
+    for (var ax = x0; ax <= x1; ax += 3) { ctx.beginPath(); ctx.moveTo(geo.bx + ax * cs + cs * .18, geo.by + y0 * cs); ctx.lineTo(geo.bx + ax * cs + cs * .18, geo.by + (y1 + 1) * cs); ctx.stroke(); }
+  } else if (theme.id === 'basement') {
+    ctx.strokeStyle = 'rgba(55,65,65,0.12)'; ctx.lineWidth = Math.max(1, cs * .025);
+    for (var byy = y0; byy <= y1; byy++) for (var bxx = x0; bxx <= x1; bxx++) if ((bxx * 13 + byy * 7) % 19 === 0) {
+      var bx0 = geo.bx + bxx * cs, by0 = geo.by + byy * cs;
+      ctx.beginPath(); ctx.moveTo(bx0 + cs * .25, by0 + cs * .28); ctx.lineTo(bx0 + cs * .48, by0 + cs * .43); ctx.lineTo(bx0 + cs * .38, by0 + cs * .66); ctx.stroke();
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(105,75,42,0.13)'; ctx.lineWidth = Math.max(1, cs * .035);
+    for (var wy = y0; wy <= y1; wy++) for (var wx = x0; wx <= x1; wx++) if ((wx * 11 + wy * 17) % 23 === 0) {
+      var wx0 = geo.bx + wx * cs, wy0 = geo.by + wy * cs;
+      ctx.strokeRect(wx0 + cs * .2, wy0 + cs * .2, cs * .6, cs * .6);
+      ctx.beginPath(); ctx.moveTo(wx0 + cs * .2, wy0 + cs * .4); ctx.lineTo(wx0 + cs * .8, wy0 + cs * .4); ctx.stroke();
+    }
+  }
+  ctx.restore();
   ctx.strokeStyle = 'rgba(160,120,70,0.18)';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -847,6 +956,42 @@ function drawGame() {
       geo.bx + tr.x * cs + cs / 2 - size / 2, geo.by + tr.y * cs + cs / 2 - size / 2, size, size);
   });
 
+  /* новые препятствия и бонусы */
+  (G.coins || []).forEach(function(coin) {
+    if (coin.taken || !vis(coin.x, coin.y)) return;
+    var ccx = geo.bx + coin.x * cs + cs / 2, ccy = geo.by + coin.y * cs + cs / 2;
+    ctx.beginPath(); ctx.arc(ccx, ccy, cs * .27, 0, Math.PI * 2); ctx.fillStyle = '#f7c948'; ctx.fill();
+    ctx.lineWidth = Math.max(2, cs * .07); ctx.strokeStyle = '#a56a16'; ctx.stroke();
+    text('★', ccx, ccy, Math.max(10, cs * .32), '#fff6c9', 'center', true);
+  });
+  (G.doors || []).forEach(function(door) {
+    if (!vis(door.x, door.y)) return;
+    var dx = geo.bx + door.x * cs, dy = geo.by + door.y * cs;
+    ctx.fillStyle = door.open ? '#9bb18a' : '#8b5934';
+    rrPath(dx + cs * .18, dy + cs * .08, cs * .64, cs * .84, 5); ctx.fill();
+    ctx.strokeStyle = '#4b3621'; ctx.lineWidth = Math.max(2, cs * .06); ctx.stroke();
+    ctx.fillStyle = '#e7c46c'; ctx.beginPath(); ctx.arc(dx + cs * (door.open ? .34 : .7), dy + cs * .5, Math.max(2, cs * .055), 0, 7); ctx.fill();
+    if (door.open) text('↗', dx + cs * .5, dy + cs * .48, Math.max(12, cs * .38), '#fff4d6', 'center', true);
+  });
+  (G.dogs || []).forEach(function(dog) {
+    if (!vis(dog.x, dog.y)) return;
+    var dx = geo.bx + dog.x * cs, dy = geo.by + dog.y * cs;
+    ctx.save(); ctx.globalAlpha = dog.calm ? .72 : 1;
+    text('🐶', dx + cs / 2, dy + cs * .55, Math.max(18, cs * .78), '#ffffff', 'center', true);
+    if (dog.calm) text('Zz', dx + cs * .75, dy + cs * .16, Math.max(10, cs * .25), '#4f8fc7', 'center', true);
+    else text('!', dx + cs * .78, dy + cs * .18, Math.max(12, cs * .35), '#d64b2a', 'center', true);
+    ctx.restore();
+  });
+  (G.teleports || []).forEach(function(pair, pi) {
+    [pair.a, pair.b].forEach(function(pt, side) {
+      if (!vis(pt.x, pt.y)) return;
+      var cxp = geo.bx + pt.x * cs + cs / 2, cyp = geo.by + pt.y * cs + cs / 2;
+      ctx.beginPath(); ctx.arc(cxp, cyp, cs * .34, 0, Math.PI * 2); ctx.fillStyle = side ? '#4d9ed0' : '#9b68d0'; ctx.fill();
+      ctx.lineWidth = Math.max(2, cs * .08); ctx.strokeStyle = '#f7e8ff'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cxp, cyp, cs * .2, G.time * 2, G.time * 2 + Math.PI * 1.5); ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, cs * .06); ctx.stroke();
+    });
+  });
+
   /* сыр */
   if (G.cheese && vis(G.cheese.x, G.cheese.y)) {
     var sizeC = cs * 0.8;
@@ -866,10 +1011,10 @@ function drawGame() {
     var px = geo.bx + c.x * cs + cs / 2 - size / 2;
     var py = geo.by + c.y * cs + cs / 2 - size * 0.62;
     if (c.state === 'asleep') {
-      drawSprite('cat_sleep_sheet', Math.floor(c.anim * 2.5) % 4, 4, px, py, size, size);
+      drawSprite('cat_sleep_sheet', Math.floor(c.anim * 2.5) % 4, 4, px, py, size, size, false, skinHue('cat'));
       if (c.snoozeFx > 0) text('Zz!', px + size * 0.8, py + 10, Math.max(12, cs * 0.5), '#5e3416');
     } else {
-      drawSprite('cat_awake', 0, 1, px, py, size, size);
+      drawSprite('cat_awake', 0, 1, px, py, size, size, false, skinHue('cat'));
       if (cs >= 20) {
         var bx2 = px + size * 0.78, by2 = py - 4 + Math.sin(G.time * 6) * 3;
         ctx.fillStyle = '#fffdf4';
@@ -897,7 +1042,7 @@ function drawGame() {
     if (b[0] !== a[0]) m.face = b[0] > a[0] ? 1 : -1;
     var size = cs * 0.72;
     drawSprite('mouse_run_sheet', Math.floor(G.time * 12) % 6, 6,
-      geo.bx + fx * cs + cs / 2 - size / 2, geo.by + fy * cs + cs - size, size, size, m.face < 0);
+      geo.bx + fx * cs + cs / 2 - size / 2, geo.by + fy * cs + cs - size, size, size, m.face < 0, skinHue('mouse'));
   });
 
   /* подсказка */
@@ -910,10 +1055,12 @@ function drawGame() {
   ctx.restore();
 
   /* HUD */
-  text(t('level') + ' ' + (G.levelIdx + 1), W / 2, 30, 28, '#4b3621');
+  text(t('level') + ' ' + (G.levelIdx + 1), W / 2, 25, 25, '#4b3621');
+  text(chapterName(G.levelIdx), W / 2, 52, 14, theme.accent, 'center', true);
+  text('🪙 ' + Save.data.coins, 82, 28, 15, '#a56a16', 'center', true);
   var left = 0;
   G.holes.forEach(function(h) { if (!h.done) left++; });
-  text(t('mice') + ': ' + (G.holes.length - left) + '/' + G.holes.length, W / 2, 58, 16, '#8a6342', 'center', true);
+  text(t('mice') + ': ' + (G.holes.length - left) + '/' + G.holes.length, W / 2, 72, 14, '#8a6342', 'center', true);
   var s = 52;
   var allOn = Save.data.sound || Save.data.music;   // кнопка в игре — «всё вкл/выкл»; по отдельности — в паузе
   iconButton(14, 10, s, allOn ? 'sound_on' : 'sound_off', function() {
@@ -1242,6 +1389,7 @@ function draw() {
   if (G.screen === 'loading') drawLoading();
   else if (G.screen === 'menu') drawMenu();
   else if (G.screen === 'map') drawMap();
+  else if (G.screen === 'shop') drawShop();
   else if (G.screen === 'game') drawGame();
   if (G.errMsg && G.screen !== 'game') {
     ctx.fillStyle = 'rgba(200,40,40,0.9)';

@@ -42,28 +42,35 @@ var HAND_LEVELS = [
 
   { cols:6, rows:6,
     holes:[{ x:0, y:2, path:[[0,2],[1,2],[2,2],[3,2],[4,2],[5,2]] }],
-    cats:[{ x:2, y:2, wake:3, sleep:4 }, { x:4, y:2, wake:4, sleep:3 }],
-    traps:[], cheese:null },
+    cats:[{ x:2, y:2, wake:4.2, sleep:3.5 }, { x:4, y:2, wake:4.5, sleep:3.2 }],
+    traps:[{ x:3, y:2 }], cheese:null },
 
   { cols:6, rows:6,
     holes:[{ x:0, y:1, path:[[0,1],[1,1],[2,1],[3,1],[4,1],[5,1]] },
            { x:0, y:3, path:[[0,3],[1,3],[2,3],[3,3],[4,3],[5,3]] },
            { x:0, y:5, path:[[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]] }],
-    cats:[{ x:3, y:3, wake:3, sleep:5 }],
-    traps:[{ x:4, y:1 }], cheese:null },
+    cats:[{ x:2, y:1, wake:4.2, sleep:3.5 }, { x:3, y:3, wake:4.5, sleep:3.2 }, { x:2, y:5, wake:4.2, sleep:3.4 }],
+    traps:[{ x:4, y:1 }, { x:4, y:3 }, { x:4, y:5 }],
+    dogs:[{ x:1, y:3 }], doors:[{ x:3, y:5 }], coins:[{ x:3, y:1 }], cheese:null },
 
   { cols:6, rows:6,
     holes:[{ x:0, y:2, path:[[0,2],[1,2],[2,2],[3,2],[3,3],[3,4],[4,4],[5,4]] },
            { x:0, y:5, path:[[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]] }],
-    cats:[{ x:3, y:4, wake:3, sleep:4 }, { x:2, y:5, wake:4, sleep:3 }],
-    traps:[{ x:1, y:2 }], cheese:null },
+    cats:[{ x:1, y:2, wake:4.5, sleep:3.2 }, { x:3, y:4, wake:4.2, sleep:3.4 }, { x:2, y:5, wake:4.5, sleep:3.2 }, { x:4, y:5, wake:4.2, sleep:3.3 }],
+    traps:[{ x:2, y:2 }, { x:1, y:5 }, { x:4, y:4 }],
+    dogs:[{ x:3, y:3 }], doors:[{ x:3, y:5 }], coins:[{ x:3, y:2 }], cheese:null },
 
   { cols:6, rows:6,
-    holes:[{ x:0, y:1, path:[[0,1],[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[5,3]] },
-           { x:0, y:4, path:[[0,4],[1,4],[2,4],[3,4],[4,4],[5,4]] }],
-    cats:[{ x:3, y:1, wake:3, sleep:4 }, { x:3, y:4, wake:4, sleep:3 }],
-    traps:[{ x:4, y:1 }, { x:2, y:4 }],
-    cheese:{ x:4, y:4 } }
+    holes:[{ x:0, y:0, path:[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[5,1],[5,2]] },
+           { x:0, y:3, path:[[0,3],[1,3],[2,3],[2,2],[2,1],[3,1],[4,1],[4,2],[4,3],[5,3]] },
+           { x:0, y:5, path:[[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]] }],
+    cats:[{ x:2, y:0, wake:4.5, sleep:3.2 }, { x:5, y:1, wake:4.2, sleep:3.3 },
+          { x:1, y:3, wake:4.5, sleep:3.2 }, { x:3, y:1, wake:4.2, sleep:3.3 },
+          { x:2, y:5, wake:4.5, sleep:3.2 }, { x:4, y:5, wake:4.2, sleep:3.3 }],
+    traps:[{ x:4, y:0 }, { x:2, y:3 }, { x:3, y:5 }],
+    dogs:[{ x:1, y:5 }], doors:[{ x:3, y:0 }],
+    teleports:[{ a:{ x:2, y:2 }, b:{ x:4, y:2 } }], coins:[{ x:1, y:0 }],
+    cheese:{ x:4, y:3 } }
 ];
 
 /* ============================================================
@@ -74,7 +81,7 @@ var HAND_LEVELS = [
    проверку ботом (tools/verify.js). Так проходимость гарантирована.
    ============================================================ */
 var LEVEL_COUNT = 1000;
-var LEVEL_SALT = {};
+var LEVEL_SALT = {"818":1};
 
 function mulberry32(a) {
   return function() {
@@ -99,19 +106,19 @@ function levelParams(idx) {
   var d = idx - 10;                       // 0..989
   var t = Math.min(1, d / 989);
   var S = Math.min(30, 6 + Math.floor(d / 24));            // размер поля 6 → 30
-  var H = Math.min(2 + Math.floor(d / 100), Math.floor(S / 2)); // норы 2 → 11
-  var rhoC = 0.14 + 0.20 * t;             // плотность котов на пути
-  var rhoT = 0.05 + 0.07 * t;             // плотность ловушек
+  var H = Math.min(2 + Math.floor(d / 85), Math.floor(S / 2)); // больше нор на средних и высоких уровнях
+  var rhoC = 0.18 + 0.24 * t;             // больше котов на маршрутах
+  var rhoT = 0.07 + 0.08 * t;             // плотнее расставлены мышеловки
   return {
     d: d, t: t, S: S, H: H,
     cats: Math.max(3, Math.floor(H * (S - 3) * rhoC)),
     traps: Math.max(2, Math.floor(H * (S - 4) * rhoT)),
-    speed: r1(2.2 + 0.6 * t),
-    sleepBase: 5.0 - 2.0 * t,             // коты спят всё меньше
-    wakeBase: 3.0 + 2.0 * t,              // и бодрствуют всё дольше
-    bendMax: Math.min(7, Math.floor(d / 120)),
-    maxJump: Math.min(29, 2 + Math.floor(d / 80)),
-    cross: d >= 200
+    speed: r1(2.3 + 0.8 * t),
+    sleepBase: 4.6 - 2.2 * t,             // коты спят меньше на поздних уровнях
+    wakeBase: 3.3 + 2.7 * t,              // коты дольше бодрствуют
+    bendMax: Math.min(8, Math.floor(d / 90)),
+    maxJump: Math.min(29, 2 + Math.floor(d / 65)),
+    cross: d >= 150
   };
 }
 
@@ -247,7 +254,51 @@ function buildLevel(idx, salt) {
   }
 
   var holes = paths.map(function(p) { return { x: p[0][0], y: p[0][1], path: p }; });
-  var level = { cols: cols, rows: rows, holes: holes, cats: cats, traps: traps, cheese: cheese, speed: P.speed };
+  /* Новые интерактивные объекты размещаются только на безопасных клетках маршрутов. */
+  var dogs = [], doors = [], teleports = [], coins = [];
+  function placeExtra(target, count, type) {
+    for (var n = 0; n < count; n++) {
+      var candidates = [];
+      paths.forEach(function(pp, pi) {
+        for (var kk = 2; kk < pp.length - 2; kk++) {
+          var cc = pp[kk], key = cc[0] + ',' + cc[1];
+          if (!used[key] && !protect[key]) candidates.push({ c: cc, pi: pi, kk: kk });
+        }
+      });
+      if (!candidates.length) break;
+      var pick = candidates[rint(rnd, 0, candidates.length - 1)], cell = pick.c;
+      used[cell[0] + ',' + cell[1]] = 1;
+      target.push({ x: cell[0], y: cell[1] });
+    }
+  }
+  var dogCount = idx >= 10 ? Math.min(2, 1 + Math.floor(P.d / 420)) : 0;
+  var doorCount = idx >= 16 ? Math.min(2, 1 + Math.floor(P.d / 500)) : 0;
+  placeExtra(dogs, dogCount, 'dog');
+  placeExtra(doors, doorCount, 'door');
+  /* Одна пара порталов: вход и выход принадлежат одному маршруту, выход дальше по пути. */
+  if (idx >= 28 && rnd() < 0.62) {
+    for (var ti = 0; ti < paths.length; ti++) {
+      var tpPath = paths[ti], pairFound = false;
+      for (var ai = 2; ai < tpPath.length - 4 && !pairFound; ai++) {
+        var ac = tpPath[ai], ak = ac[0] + ',' + ac[1];
+        if (used[ak] || protect[ak]) continue;
+        for (var bi = ai + 3; bi < tpPath.length - 1; bi++) {
+          var bc2 = tpPath[bi], bk = bc2[0] + ',' + bc2[1];
+          if (!used[bk] && !protect[bk]) {
+            teleports.push({ a: { x: ac[0], y: ac[1] }, b: { x: bc2[0], y: bc2[1] } });
+            used[ak] = used[bk] = 1; pairFound = true; break;
+          }
+        }
+      }
+      if (pairFound) break;
+    }
+  }
+  /* Монета лежит на маршруте; допускается клетка рядом с норой/выходом, но не сами нора и выход. */
+  var coinCells = [];
+  paths.forEach(function(pp) { for (var ci = 1; ci < pp.length - 1; ci++) { var ccoin = pp[ci], ckey = ccoin[0] + ',' + ccoin[1]; if (!used[ckey]) coinCells.push(ccoin); } });
+  if (coinCells.length) { var chosenCoin = coinCells[rint(rnd, 0, coinCells.length - 1)]; coins.push({ x: chosenCoin[0], y: chosenCoin[1] }); used[chosenCoin[0] + ',' + chosenCoin[1]] = 1; }
+
+  var level = { cols: cols, rows: rows, holes: holes, cats: cats, traps: traps, dogs: dogs, doors: doors, teleports: teleports, coins: coins, cheese: cheese, speed: P.speed };
 
   /* случайно поворачиваем поле на бок (мыши бегут сверху вниз) */
   if (rnd() < 0.5) {
@@ -256,6 +307,10 @@ function buildLevel(idx, salt) {
       holes: holes.map(function(h) { return { x: h.y, y: h.x, path: h.path.map(function(c) { return [c[1], c[0]]; }) }; }),
       cats: cats.map(function(c) { return { x: c.y, y: c.x, wake: c.wake, sleep: c.sleep }; }),
       traps: traps.map(function(c) { return { x: c.y, y: c.x }; }),
+      dogs: dogs.map(function(c) { return { x: c.y, y: c.x }; }),
+      doors: doors.map(function(c) { return { x: c.y, y: c.x }; }),
+      teleports: teleports.map(function(p) { return { a: { x: p.a.y, y: p.a.x }, b: { x: p.b.y, y: p.b.x } }; }),
+      coins: coins.map(function(c) { return { x: c.y, y: c.x }; }),
       cheese: cheese ? { x: cheese.y, y: cheese.x } : null
     };
   }
@@ -267,4 +322,11 @@ function getLevel(idx) {
   if (idx < HAND_LEVELS.length) return HAND_LEVELS[idx];
   if (!LEVEL_CACHE[idx]) LEVEL_CACHE[idx] = buildLevel(idx, LEVEL_SALT[idx] || 0);
   return LEVEL_CACHE[idx];
+}
+
+/* Тематические главы кампании. Индекс уровня начинается с нуля. */
+function getChapter(idx) {
+  if (idx < 100) return { id: 'apartment', title: 'Квартира', range: '1–100', floorA: '#f7ecd7', floorB: '#f0e1c2', wall: '#f5e6cf', accent: '#b77a45' };
+  if (idx < 300) return { id: 'basement', title: 'Подвал', range: '101–300', floorA: '#b9b5a6', floorB: '#aaa695', wall: '#d1cbbb', accent: '#687b79' };
+  return { id: 'warehouse', title: 'Склад', range: '301–1000', floorA: '#c5b99e', floorB: '#b7a98b', wall: '#ded1b5', accent: '#9a713b' };
 }
