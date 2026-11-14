@@ -39,7 +39,7 @@ const sandbox = { window: win, document: { readyState: 'complete', getElementByI
 Object.assign(sandbox, win); sandbox.window = sandbox;
 vm.createContext(sandbox);
 for (const f of ['sim.js', 'levels.js', 'ads.js', 'audio.js', 'game.js']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f), 'utf8'), sandbox, { filename: f });
-vm.runInContext('this.__G=G;this.__api={startLevel,openMap,Save,setScreen,zoomAt,gameTap,boardGeometry,fail,win,openShop,buyOrEquipSkin,SKINS,getTintedSprite};', sandbox);
+vm.runInContext('this.__G=G;this.__api={startLevel,openMap,Save,setScreen,zoomAt,gameTap,boardGeometry,fail,win,openShop,buyOrEquipSkin,SKINS,getTintedSprite,drawSprite};', sandbox);
 const G = sandbox.__G, api = sandbox.__api;
 let ts = 0;
 function frames(n, dt = 16) { for (let i = 0; i < n; i++) { ts += dt; audioNow = ts / 1000; rafCb(ts); } }
@@ -78,8 +78,25 @@ setTimeout(() => {
   const tintedMouse = api.getTintedSprite('mouse_run_sheet', api.SKINS.mouse[1].hue);
   assert(!!tintedMouse && tintedMouse.width === 600 && tintStats.composite.includes('color') && tintStats.fills > 0, 'серый спрайт мыши реально перекрашивается через canvas color blend');
   assert(api.getTintedSprite('mouse_run_sheet', api.SKINS.mouse[1].hue) === tintedMouse, 'перекрашенный спрайт кешируется и не создаётся заново каждый кадр');
+  // Регрессия V6.1.2: Canvas не имеет naturalHeight — drawSprite обязан брать height.
+  let badTintDraw = false;
+  const realDrawImage = ctx2d.drawImage;
+  ctx2d.drawImage = function() {
+    const a = Array.from(arguments);
+    if (a.length === 9 && (!Number.isFinite(a[4]) || a[4] <= 0)) badTintDraw = true;
+    tintStats.draws++;
+  };
+  api.drawSprite('mouse_run_sheet', 2, 6, 10, 10, 40, 40, false, api.SKINS.mouse[1].hue);
+  api.drawSprite('cat_sleep_sheet', 1, 4, 10, 10, 40, 40, false, api.SKINS.cat[1].hue);
+  assert(!badTintDraw, 'мышь и кот отрисовываются из перекрашенного Canvas с корректной высотой кадра');
+  api.buyOrEquipSkin('cat', api.SKINS.cat[1]);
+  api.openMap(0); frames(4);
+  assert(G.screen === 'map' && !badTintDraw, 'карта уровней рисует предпросмотр выбранных скинов без ошибок');
+  api.openShop('mouse'); frames(4);
+  assert(G.screen === 'shop' && !badTintDraw, 'магазин мышей показывает цветной предпросмотр выбранного скина');
   api.openShop('cat'); frames(4);
-  assert(G.screen === 'shop' && G.shopTab === 'cat', 'переключение на магазин котов работает');
+  assert(G.screen === 'shop' && G.shopTab === 'cat' && !badTintDraw, 'магазин котов показывает цветной предпросмотр выбранного скина');
+  ctx2d.drawImage = realDrawImage;
   assert(api.Save.encode().v === 3, 'новый формат сохранения V3 активен');
   api.setScreen('menu'); frames(2);
   const cellXY = (x, y) => { const g = api.boardGeometry(); return [g.bx + (x + .5) * g.cs, g.by + (y + .5) * g.cs]; };

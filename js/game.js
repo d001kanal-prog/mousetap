@@ -182,20 +182,33 @@ function loadAssets(done) {
 function drawSprite(name, frame, count, x, y, w, h, flip, hue) {
   var original = IMG[name];
   var im = hue ? getTintedSprite(name, hue) : original;
-  if (im && ((im.complete && im.naturalWidth) || (im.width && im.height && im.getContext))) {
-    var fw = im.naturalWidth ? im.naturalWidth / count : im.width / count;
-    ctx.save();
-    /* Резервный фильтр применяется только если перекрашенный canvas создать нельзя. */
-    if (hue && im === original) ctx.filter = 'sepia(1) saturate(3) hue-rotate(' + hue + 'deg)';
-    if (flip) {
-      ctx.translate(x + w, y);
-      ctx.scale(-1, 1);
-      ctx.drawImage(im, frame * fw, 0, fw, im.naturalHeight, 0, 0, w, h);
-    } else {
-      ctx.drawImage(im, frame * fw, 0, fw, im.naturalHeight, x, y, w, h);
+  if (im && ((im.complete && im.naturalWidth) || (im.width && im.height && typeof im.getContext === 'function'))) {
+    /* IMG может быть HTMLImageElement (naturalWidth/naturalHeight) или
+       перекрашенным HTMLCanvasElement (width/height). Не смешиваем эти API:
+       у canvas naturalHeight отсутствует, и drawImage(..., undefined, ...) бросает ошибку. */
+    var imageWidth = im.naturalWidth || im.width;
+    var imageHeight = im.naturalHeight || im.height;
+    var fw = imageWidth / count;
+    if (isFinite(fw) && fw > 0 && isFinite(imageHeight) && imageHeight > 0) {
+      ctx.save();
+      /* Резервный фильтр применяется только если перекрашенный canvas создать нельзя. */
+      if (hue && im === original) ctx.filter = 'sepia(1) saturate(3) hue-rotate(' + hue + 'deg)';
+      try {
+        if (flip) {
+          ctx.translate(x + w, y);
+          ctx.scale(-1, 1);
+          ctx.drawImage(im, frame * fw, 0, fw, imageHeight, 0, 0, w, h);
+        } else {
+          ctx.drawImage(im, frame * fw, 0, fw, imageHeight, x, y, w, h);
+        }
+      } catch (drawError) {
+        /* Не ломаем весь экран, если конкретный браузер не смог нарисовать спрайт. */
+        ctx.restore();
+        throw drawError;
+      }
+      ctx.restore();
+      return;
     }
-    ctx.restore();
-    return;
   }
   /* --- программный фолбэк --- */
   ctx.save();
@@ -749,13 +762,20 @@ function drawMenu() {
 function drawMap() {
   var mapTheme = getChapter(Math.min(LEVEL_COUNT - 1, G.mapPage * 20));
   drawWall(mapTheme);
-  text(t('map') + ' · ' + chapterName(Math.min(LEVEL_COUNT - 1, G.mapPage * 20)), W / 2, 44, Math.min(32, W / 13), '#4b3621');
+  text(t('map') + ' · ' + chapterName(Math.min(LEVEL_COUNT - 1, G.mapPage * 20)), W / 2, 38, Math.min(30, W / 14), '#4b3621');
+  /* Показываем выбранные образы прямо на карте уровней, чтобы игрок видел
+     активные скины ещё до входа в уровень. */
+  var avatarSize = 27;
+  var avatarGap = 9;
+  var avatarStartX = W / 2 - avatarSize - avatarGap / 2;
+  drawSprite('mouse_run_sheet', 2, 6, avatarStartX, 52, avatarSize, avatarSize, false, skinHue('mouse'));
+  drawSprite('cat_sleep_sheet', 1, 4, W / 2 + avatarGap / 2, 52, avatarSize, avatarSize, false, skinHue('cat'));
   var s = 52;
   iconButton(14, 14, s, 'menu_arrow', function() { setScreen('menu'); });
   drawIconMenu(uiButtons[uiButtons.length - 1]);
 
   var perPage = 20, cols = 5, rows = 4;
-  var gx = 20, gy = 86;
+  var gx = 20, gy = 94;
   var bw = Math.min((W - gx * 2 - 60) / cols, 110);
   var bh = Math.min(bw * 1.1, (H - gy - 90) / rows);
   bw = Math.min(bw, bh / 1.1);
